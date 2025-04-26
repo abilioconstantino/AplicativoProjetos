@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = "https://SEU-PROJECTO-ID.supabase.co";
-const supabaseAnonKey = "SUA-ANON-KEY";
+const supabaseUrl = "https://mjhnkskrmelshxdslerz.supabase.co";
+const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qaG5rc2tybWVsc2h4ZHNsZXJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU2MDg1MjEsImV4cCI6MjA2MTE4NDUyMX0.v-TTk-_y725XZ53humKLL-9VWL8qjbqubyrkXxro3Rc";
+const supabaseServiceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qaG5rc2tybWVsc2h4ZHNsZXJ6Iiwicm9zZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NTYwODUyMSwiZXhwIjoyMDYxMTg0NTIxfQ.S2jwKWXB_74XQ9qpgBhBOnsEqeFbH-GG0k3cuBNmUUU"; // Use apenas no backend seguro
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function ProconsumoApp() {
   const [showForm, setShowForm] = useState(false);
   const [projects, setProjects] = useState([]);
   const [newProject, setNewProject] = useState({ title: "", description: "", image: "" });
+  const [imageFile, setImageFile] = useState(null);
 
   useEffect(() => {
     fetchProjects();
@@ -21,15 +23,56 @@ export default function ProconsumoApp() {
   }
 
   async function handlePublish() {
-    if (!newProject.title || !newProject.description) return;
-    const { error } = await supabase.from("projects").insert([
-      { ...newProject, author: "Você" }
-    ]);
-    if (error) console.error("Erro ao publicar projeto:", error);
-    else {
-      setNewProject({ title: "", description: "", image: "" });
-      setShowForm(false);
-      fetchProjects();
+    if (!newProject.title || !newProject.description) {
+      console.error("Título e descrição são obrigatórios.");
+      return;
+    }
+
+    try {
+      let imageUrl = null;
+
+      if (imageFile) {
+        const { data, error: uploadError } = await supabase.storage
+          .from("project-images")
+          .upload(`images/${Date.now()}_${imageFile.name}`, imageFile);
+
+        if (uploadError) {
+          console.error("Erro ao fazer upload da imagem:", uploadError);
+          return;
+        }
+
+        imageUrl = data.path ? supabase.storage.from("project-images").getPublicUrl(data.path).data.publicUrl : null;
+      }
+
+      const { error } = await supabase.from("projects").insert([
+        { ...newProject, image: imageUrl, author: "Você" }
+      ]);
+
+      if (error) {
+        console.error("Erro ao publicar projeto:", error);
+      } else {
+        console.log("Projeto publicado com sucesso!");
+        setNewProject({ title: "", description: "", image: "" });
+        setImageFile(null);
+        setShowForm(false);
+        fetchProjects();
+      }
+    } catch (err) {
+      console.error("Erro inesperado:", err);
+    }
+  }
+
+  async function handleDelete(projectId) {
+    try {
+      const { error } = await supabase.from("projects").delete().eq("id", projectId);
+      if (error) {
+        console.error("Erro ao excluir projeto:", error);
+      } else {
+        console.log("Projeto excluído com sucesso!");
+        fetchProjects(); // Atualiza a lista de projetos
+      }
+    } catch (err) {
+      console.error("Erro inesperado:", err);
     }
   }
 
@@ -43,6 +86,12 @@ export default function ProconsumoApp() {
           <div style={styles.cardTitle}>{project.title}</div>
           <div style={styles.cardDescription}>{project.description}</div>
           <div style={styles.cardAuthor}>por {project.author}</div>
+          <button
+            style={styles.deleteButton}
+            onClick={() => handleDelete(project.id)}
+          >
+            🗑️
+          </button>
         </div>
       ))}
 
@@ -69,11 +118,10 @@ export default function ProconsumoApp() {
             onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
           ></textarea>
           <input
-            type="text"
-            placeholder="URL da imagem"
+            type="file"
+            accept="image/*"
             style={styles.input}
-            value={newProject.image}
-            onChange={(e) => setNewProject({ ...newProject, image: e.target.value })}
+            onChange={(e) => setImageFile(e.target.files[0])}
           />
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button style={styles.button} onClick={handlePublish}>Publicar</button>
@@ -153,5 +201,13 @@ const styles = {
     borderRadius: "0.5rem",
     border: "1px solid #ddd",
     fontSize: "1rem",
+  },
+  deleteButton: {
+    background: "none",
+    border: "none",
+    color: "#f00",
+    fontSize: "1.5rem",
+    cursor: "pointer",
+    marginTop: "0.5rem",
   },
 };
