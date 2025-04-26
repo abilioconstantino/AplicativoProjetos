@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, Image, ScrollView, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { createClient } from "@supabase/supabase-js";
+import { useNavigation } from "@react-navigation/native";
 
 // 🔑 Coloque suas credenciais aqui
 const supabaseUrl = "https://mjhnkskrmelshxdslerz.supabase.co";
@@ -9,104 +10,56 @@ const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function App() {
-  const [showForm, setShowForm] = useState(false);
+  const navigation = useNavigation(); // Obtém o objeto navigation
+
   const [projects, setProjects] = useState([]);
-  const [newProject, setNewProject] = useState({ title: "", description: "", image: null });
 
   useEffect(() => {
     fetchProjects();
   }, []);
 
   async function fetchProjects() {
-    const { data, error } = await supabase.from("projects").select("*").order("created_at", { ascending: false });
-    if (error) console.error("Erro ao buscar projetos:", error);
-    else setProjects(data);
-  }
-
-  async function handlePublish() {
-    if (!newProject.title || !newProject.description) return;
-
     try {
-      let imageUrl = null;
-
-      if (newProject.image) {
-        const file = newProject.image;
-        const fileName = `${Date.now()}_${file.uri.split("/").pop()}`;
-
-        // Corrigindo o envio do arquivo
-        const { data, error: uploadError } = await supabase.storage
-          .from("project-images")
-          .upload(`images/${fileName}`, {
-            uri: file.uri,
-            type: "image/jpeg", // Certifique-se de que o tipo MIME está correto
-            name: fileName,
-          });
-
-        if (uploadError) {
-          console.error("Erro ao fazer upload da imagem:", uploadError);
-          return;
-        }
-
-        imageUrl = data.path
-          ? supabase.storage.from("project-images").getPublicUrl(data.path).data.publicUrl
-          : null;
-      }
-
-      const { error } = await supabase.from("projects").insert([
-        { ...newProject, image: imageUrl, author: "Você" },
-      ]);
+      const { data, error } = await supabase
+        .from("projects")
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Erro ao publicar projeto:", error);
+        console.error("Erro ao buscar projetos:", error);
       } else {
-        setNewProject({ title: "", description: "", image: null });
-        setShowForm(false);
-        fetchProjects();
+        setProjects(data);
       }
     } catch (err) {
       console.error("Erro inesperado:", err);
-    }
-  }
-
-  async function handleDelete(projectId) {
-    try {
-      const { error } = await supabase.from("projects").delete().eq("id", projectId);
-      if (error) {
-        console.error("Erro ao excluir projeto:", error);
-      } else {
-        setProjects(projects.filter((project) => project.id !== projectId));
-      }
-    } catch (err) {
-      console.error("Erro inesperado:", err);
-    }
-  }
-
-  async function pickImage() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-
-    if (!result.canceled) {
-      setNewProject({ ...newProject, image: result.assets[0] });
     }
   }
 
   async function confirmDelete(projectId) {
     Alert.alert(
-      "Confirmar Exclusão",
-      "Tem certeza de que deseja excluir este projeto?",
+      "Excluir Projeto",
+      "Tem certeza que deseja excluir este projeto?",
       [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
+        { text: "Cancelar", style: "cancel" },
         {
           text: "Excluir",
           style: "destructive",
-          onPress: () => handleDelete(projectId),
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from("projects")
+                .delete()
+                .eq("id", projectId);
+  
+              if (error) {
+                console.error("Erro ao excluir projeto:", error);
+              } else {
+                fetchProjects(); // Atualiza a lista de projetos
+              }
+            } catch (err) {
+              console.error("Erro inesperado ao excluir:", err);
+            }
+          },
         },
       ]
     );
@@ -116,62 +69,36 @@ export default function App() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.header}>Explore projetos criativos</Text>
 
-      {projects.map((project) => (
-        <View style={styles.card} key={project.id}>
-          {project.image ? <Image source={{ uri: project.image }} style={styles.image} /> : null}
-          <Text style={styles.cardTitle}>{project.title}</Text>
-          <Text style={styles.cardDescription}>{project.description}</Text>
-          <Text style={styles.cardAuthor}>por {project.author}</Text>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => confirmDelete(project.id)}
-          >
-            <Image
-              source={require('../assets/images/lata-de-lixo.png')} // Caminho relativo correto
-              style={styles.deleteIcon}
-            />
-          </TouchableOpacity>
-        </View>
-      ))}
-
-      {!showForm && (
-        <TouchableOpacity style={styles.button} onPress={() => setShowForm(true)}>
-          <Text style={styles.buttonText}>Publicar projeto</Text>
-        </TouchableOpacity>
-      )}
-
-      {showForm && (
-        <View>
-          <Text style={styles.header}>Novo Projeto</Text>
-          <TextInput
-            placeholder="Nome do projeto"
-            style={styles.input}
-            value={newProject.title}
-            onChangeText={(text) => setNewProject({ ...newProject, title: text })}
-          />
-          <TextInput
-            placeholder="Descrição"
-            style={styles.input}
-            multiline
-            value={newProject.description}
-            onChangeText={(text) => setNewProject({ ...newProject, description: text })}
-          />
-          <TouchableOpacity style={styles.button} onPress={pickImage}>
-            <Text style={styles.buttonText}>Selecionar Imagem</Text>
-          </TouchableOpacity>
-          {newProject.image && (
-            <Image source={{ uri: newProject.image.uri }} style={styles.previewImage} />
-          )}
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity style={styles.button} onPress={handlePublish}>
-              <Text style={styles.buttonText}>Publicar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.outlineButton} onPress={() => setShowForm(false)}>
-              <Text style={styles.outlineButtonText}>Cancelar</Text>
+      {projects.length > 0 ? (
+        projects.map((project) => (
+          <View style={styles.card} key={project.id}>
+            {project.image ? (
+              <Image source={{ uri: project.image }} style={styles.image} />
+            ) : null}
+            <Text style={styles.cardTitle}>{project.title}</Text>
+            <Text style={styles.cardDescription}>{project.description}</Text>
+            <Text style={styles.cardAuthor}>por {project.author}</Text>
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => confirmDelete(project.id)}
+            >
+              <Image
+                source={require("../assets/images/lata-de-lixo.png")}
+                style={styles.deleteIcon}
+              />
             </TouchableOpacity>
           </View>
-        </View>
+        ))
+      ) : (
+        <Text>Nenhum projeto encontrado.</Text>
       )}
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => navigation.navigate("NewProject")} // Navega para a tela "Novo Projeto"
+      >
+        <Text style={styles.buttonText}>Publicar projeto</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }

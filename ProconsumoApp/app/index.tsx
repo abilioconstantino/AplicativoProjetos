@@ -1,5 +1,5 @@
-import App from "./app";
+import Navigation from "./navigation";
 
 export default function Index() {
-  return <App />;
+  return <Navigation />;
 }
